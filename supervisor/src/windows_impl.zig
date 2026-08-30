@@ -75,6 +75,7 @@ const JobExtendedLimitInformation = extern struct {
     io_info: IoCounters,
     process_memory_limit: usize,
     job_memory_limit: usize,
+    peak_process_memory_used: usize,
     peak_job_memory_used: usize,
 };
 
@@ -306,4 +307,10 @@ test "Windows 10 x64 builds are rejected while Windows 11 builds pass" {
     try std.testing.expect(!isSupportedWindows11Version(10, 0, 19_045));
     try std.testing.expect(isSupportedWindows11Version(10, 0, 22_000));
     try std.testing.expect(isSupportedWindows11Version(10, 0, 26_100));
+}
+
+test "extended Job limit record matches the Windows x64 ABI" {
+    if (@sizeOf(usize) == 8) {
+        try std.testing.expectEqual(@as(usize, 144), @sizeOf(JobExtendedLimitInformation));
+    }
 }
