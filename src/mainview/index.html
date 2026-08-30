@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DSH Reference Host</title>
+    <style>
+      :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #10141c; color: #edf2f7; }
+      main { width: min(600px, calc(100vw - 48px)); padding: 32px; border: 1px solid #334155; border-radius: 16px; background: #172033; box-shadow: 0 18px 60px #0006; }
+      h1 { margin-top: 0; font-size: 1.35rem; }
+      p { color: #b7c3d4; line-height: 1.5; white-space: pre-wrap; }
+      #error { color: #fecaca; }
+      button { border: 0; border-radius: 8px; padding: 10px 16px; background: #4f8cff; color: white; font: inherit; cursor: pointer; margin-right: 8px; }
+      button[hidden] { display: none; }
+      button.secondary { background: #334155; }
+    </style>
+  </head>
+  <body>
+    <main aria-live="polite">
+      <h1 id="title">Starting DSH Reference Host</h1>
+      <p id="status">Checking the supported Bun runtime…</p>
+      <p id="error" hidden></p>
+      <div>
+        <button id="install" hidden>Install Bun 1.4.0</button>
+        <button id="retry" class="secondary" hidden>Retry</button>
+      </div>
+    </main>
+    <script>
+      (() => {
+        const status = document.getElementById("status");
+        const error = document.getElementById("error");
+        const install = document.getElementById("install");
+        const retry = document.getElementById("retry");
+        const send = (action) => window.__electrobunSendToHost?.({ action });
+        install.addEventListener("click", () => send("install-bun"));
+        retry.addEventListener("click", () => send("retry"));
+        window.__dshHostState = (kind, value) => {
+          if (kind === "loading") {
+            status.textContent = value.message || "Starting…";
+            error.hidden = true;
+            install.hidden = true;
+            retry.hidden = true;
+          } else if (kind === "failed") {
+            status.textContent = "The desktop host could not start the sidecar.";
+            error.textContent = value.diagnostic || "Unknown startup error";
+            error.hidden = false;
+            install.hidden = !value.canInstall;
+            retry.hidden = !value.canRetry;
+          }
+        };
+      })();
+    </script>
+  </body>
+</html>

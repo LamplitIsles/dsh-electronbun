@@ -1,0 +1,11 @@
+.hutch/
+node_modules/
+artifacts/
+build/
+dist/
+supervisor/bin/
+supervisor/.zig-cache/
+supervisor/zig-cache/
+supervisor/zig-out/
+.native-test/
+*.log
