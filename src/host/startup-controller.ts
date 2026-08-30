@@ -1,5 +1,5 @@
 import type { ValidatedProductManifest } from "./manifest";
-import { assertSupportedWindowsX64, type HostPlatform } from "./platform";
+import { assertSupportedWindows11X64, readHostPlatform, type HostPlatform } from "./platform";
 import type { BunProvisioningResult, BunResolution } from "./bun-runtime";
 
 export type StartupFailureReason =
@@ -167,7 +167,7 @@ export class StartupController {
     this.supervisor = options.supervisor;
     this.readiness = options.readiness ?? fetchReadinessClient;
     this.view = options.view;
-    this.platform = options.platform ?? process;
+    this.platform = options.platform ?? readHostPlatform();
     this.parentPid = options.parentPid ?? process.pid;
     this.pollIntervalMs = options.pollIntervalMs ?? 100;
     this.now = options.now ?? Date.now;
@@ -186,7 +186,7 @@ export class StartupController {
     this.transition({ kind: "loading", message: `Starting ${this.manifest.app.name}…` });
 
     try {
-      assertSupportedWindowsX64(this.platform);
+      assertSupportedWindows11X64(this.platform);
     } catch (error) {
       return this.fail(operation, "unsupported-platform", error instanceof Error ? error.message : String(error), false);
     }

@@ -5,27 +5,31 @@ import Electrobun, { BrowserWindow, PATHS } from "electrobun/main";
 
 import referenceManifest from "../../product.manifest";
 import {
-  ManifestValidationError,
   type ValidatedProductManifest,
   validateProductManifest,
 } from "../host/manifest";
 import { WindowsBunRuntimeGateway } from "../host/runtime-gateway";
-import { assertSupportedWindowsX64 } from "../host/platform";
+import { assertSupportedWindows11X64, readHostPlatform } from "../host/platform";
 import { StartupController, type StartupState, type StartupView } from "../host/startup-controller";
 import { WindowsSupervisorLauncher } from "../host/supervisor-client";
+import {
+  SAFE_STARTUP_WINDOW_SETTINGS,
+  selectStartupWindowSettings,
+  type StartupWindowSettings,
+} from "../host/startup-window";
 
 class ElectrobunStartupView implements StartupView {
   readonly window: BrowserWindow;
   private domReady = false;
   private pendingState?: { kind: string; value: unknown };
 
-  constructor() {
+  constructor(windowSettings: Readonly<StartupWindowSettings>) {
     this.window = new BrowserWindow({
-      title: referenceManifest.window.title,
+      title: windowSettings.title,
       url: "views://main/index.html",
       frame: {
-        width: referenceManifest.window.width,
-        height: referenceManifest.window.height,
+        width: windowSettings.width,
+        height: windowSettings.height,
       },
       renderer: "native",
     });
@@ -125,10 +129,10 @@ function invalidManifestState(error: unknown): Extract<StartupState, { kind: "fa
 }
 
 async function run(): Promise<void> {
-  const view = new ElectrobunStartupView();
   try {
-    assertSupportedWindowsX64(process);
+    assertSupportedWindows11X64(readHostPlatform());
   } catch (error) {
+    const view = new ElectrobunStartupView(SAFE_STARTUP_WINDOW_SETTINGS);
     view.showFailure({
       kind: "failed",
       reason: "unsupported-platform",
@@ -142,10 +146,12 @@ async function run(): Promise<void> {
   try {
     manifest = validateProductManifest(referenceManifest, { stagedRoot: resourceRoot() });
   } catch (error) {
+    const view = new ElectrobunStartupView(SAFE_STARTUP_WINDOW_SETTINGS);
     view.showFailure(invalidManifestState(error));
     return;
   }
 
+  const view = new ElectrobunStartupView(selectStartupWindowSettings(manifest));
   const runtime = new WindowsBunRuntimeGateway();
   const controller = new StartupController({
     manifest,
@@ -179,9 +185,7 @@ async function run(): Promise<void> {
 }
 
 if (typeof process !== "undefined" && process.env.NODE_ENV !== "test") {
-  // Unsupported platforms still open the packaged diagnostic view; run()
-  // renders the precise platform error before doing any manifest/process work.
+  // Unsupported platforms still open the safe packaged diagnostic view; run()
+  // renders the precise platform error before configured window construction.
   void run();
 }
-
-export { ElectrobunStartupView, invalidManifestState, resourceRoot, run };

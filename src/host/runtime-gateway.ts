@@ -1,4 +1,5 @@
 import { BunProvisioner, BunRuntimeResolver, type BunProvisioningResult, type BunResolution } from "./bun-runtime";
+import { WIN_GET_BUN_PACKAGE_ID } from "./manifest";
 import type { BunRuntimeGateway } from "./startup-controller";
 
 /** Production gateway used by the Cottontail host. */
@@ -19,6 +20,6 @@ export class WindowsBunRuntimeGateway implements BunRuntimeGateway {
   }
 
   install(expectedVersion: string): Promise<BunProvisioningResult> {
-    return this.provisioner.install({ bun: { version: expectedVersion, packageId: "Oven-sh.Bun" } });
+    return this.provisioner.install({ bun: { version: expectedVersion, packageId: WIN_GET_BUN_PACKAGE_ID } });
   }
 }

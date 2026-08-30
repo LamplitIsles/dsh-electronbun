@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const command_line = @import("command_line.zig");
 
 const windows = std.os.windows;
@@ -86,6 +87,30 @@ const wait_object_0: windows.DWORD = 0;
 const wait_failed: windows.DWORD = 0xFFFFFFFF;
 const infinite: windows.DWORD = 0xFFFFFFFF;
 const still_active: windows.DWORD = 259;
+const windows_11_min_build: windows.ULONG = 22_000;
+
+fn isSupportedWindows11Version(major: windows.ULONG, minor: windows.ULONG, build: windows.ULONG) bool {
+    return major > 10 or (major == 10 and minor == 0 and build >= windows_11_min_build);
+}
+
+fn assertSupportedWindows11X64() !void {
+    if (builtin.os.tag != .windows or builtin.cpu.arch != .x86_64) {
+        std.log.err("dsh-sidecar-supervisor supports Windows 11 x64 only (received {s}/{s})", .{ @tagName(builtin.os.tag), @tagName(builtin.cpu.arch) });
+        return error.UnsupportedPlatform;
+    }
+
+    var version: windows.RTL_OSVERSIONINFOW = std.mem.zeroes(windows.RTL_OSVERSIONINFOW);
+    version.dwOSVersionInfoSize = @sizeOf(windows.RTL_OSVERSIONINFOW);
+    const status = windows.ntdll.RtlGetVersion(&version);
+    if (status != .SUCCESS) {
+        std.log.err("Windows 11 x64 is required; could not determine the Windows version (NTSTATUS 0x{X})", .{@intFromEnum(status)});
+        return error.UnsupportedPlatform;
+    }
+    if (!isSupportedWindows11Version(version.dwMajorVersion, version.dwMinorVersion, version.dwBuildNumber)) {
+        std.log.err("Windows 11 x64 is required (detected Windows {d}.{d} build {d}); Windows 10 x64 and earlier are unsupported", .{ version.dwMajorVersion, version.dwMinorVersion, version.dwBuildNumber });
+        return error.UnsupportedPlatform;
+    }
+}
 
 const ChildSpec = struct {
     parent_pid: windows.DWORD,
@@ -188,6 +213,7 @@ fn getExitCode(process: windows.HANDLE) !u32 {
 }
 
 pub fn run(allocator: std.mem.Allocator, argv: []const []const u8) !void {
+    try assertSupportedWindows11X64();
     const spec = parseArgs(allocator, argv) catch |err| {
         std.log.err("invalid supervisor arguments; expected --parent-pid PID --bun ABSOLUTE --entrypoint ABSOLUTE -- ARGS...", .{});
         return err;
@@ -274,4 +300,10 @@ test "launch paths must be absolute Windows paths" {
     try std.testing.expect(!isAbsoluteWindowsPath("bun.exe"));
     try std.testing.expect(isAbsoluteWindowsPath("C:\\Program Files\\Bun\\bun.exe"));
     try std.testing.expect(isAbsoluteWindowsPath("\\\\server\\share\\bun.exe"));
+}
+
+test "Windows 10 x64 builds are rejected while Windows 11 builds pass" {
+    try std.testing.expect(!isSupportedWindows11Version(10, 0, 19_045));
+    try std.testing.expect(isSupportedWindows11Version(10, 0, 22_000));
+    try std.testing.expect(isSupportedWindows11Version(10, 0, 26_100));
 }

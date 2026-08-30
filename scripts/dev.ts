@@ -1,11 +1,8 @@
 import { buildSupervisor } from "./build-supervisor";
 import { runProjectElectrobun } from "./project-electrobun";
+import { assertSupportedWindows11X64, readHostPlatform } from "../src/host/platform";
 
-if (process.platform !== "win32" || process.arch !== "x64") {
-  throw new Error(
-    `Windows x64 is required for the Electrobun host (received platform=${process.platform}, arch=${process.arch}).`,
-  );
-}
+assertSupportedWindows11X64(readHostPlatform());
 
 buildSupervisor();
 runProjectElectrobun(["dev", "--watch"], "development");

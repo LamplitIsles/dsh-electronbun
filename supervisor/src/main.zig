@@ -6,14 +6,14 @@ const windows_impl = if (builtin.os.tag == .windows)
 else
     struct {
         pub fn run(_: std.mem.Allocator, _: []const []const u8) !void {
-            std.log.err("dsh-sidecar-supervisor supports Windows x64 only (received {s}/{s})", .{ @tagName(builtin.os.tag), @tagName(builtin.cpu.arch) });
+            std.log.err("dsh-sidecar-supervisor supports Windows 11 x64 only (received {s}/{s})", .{ @tagName(builtin.os.tag), @tagName(builtin.cpu.arch) });
             return error.UnsupportedPlatform;
         }
     };
 
 pub fn main(init: std.process.Init) !void {
     if (builtin.os.tag != .windows or builtin.cpu.arch != .x86_64) {
-        std.log.err("dsh-sidecar-supervisor supports Windows x64 only", .{});
+        std.log.err("dsh-sidecar-supervisor supports Windows 11 x64 only", .{});
         return error.UnsupportedPlatform;
     }
     const allocator = init.arena.allocator();

@@ -17,7 +17,7 @@ export interface CommandRunner {
 }
 
 /** Spawn without a shell. Arguments are passed as an argv array. */
-export const processCommandRunner: CommandRunner = {
+const processCommandRunner: CommandRunner = {
   run(command, args, options = {}) {
     return new Promise<CommandResult>((resolve) => {
       let child;
@@ -88,7 +88,6 @@ export interface BunRuntimeResolverOptions {
   /** Candidate paths are a test seam and a way to add vendor-specific roots. */
   candidatePaths?: readonly string[];
   environment?: NodeJS.ProcessEnv;
-  whereCommand?: string;
 }
 
 function absoluteExecutablePath(value: string): boolean {
@@ -157,23 +156,21 @@ export class BunRuntimeResolver {
   private readonly fileSystem: BunExecutableFileSystem;
   private readonly candidatePaths: readonly string[];
   private readonly environment: NodeJS.ProcessEnv;
-  private readonly whereCommand: string;
 
   constructor(options: BunRuntimeResolverOptions = {}) {
     this.runner = options.runner ?? processCommandRunner;
     this.fileSystem = options.fileSystem ?? nativeFileSystem;
     this.candidatePaths = options.candidatePaths ?? [];
     this.environment = options.environment ?? process.env;
-    this.whereCommand = options.whereCommand ?? "where.exe";
   }
 
-  async locateCandidates(): Promise<string[]> {
+  private async locateCandidates(): Promise<string[]> {
     const candidates = [
       ...this.candidatePaths,
       ...candidatePathsFromEnvironment(this.environment),
       ...discoverWinGetExecutables(this.environment),
     ];
-    const whereResult = await this.runner.run(this.whereCommand, ["bun.exe"]);
+    const whereResult = await this.runner.run("where.exe", ["bun.exe"]);
     if (whereResult.exitCode === 0) {
       for (const line of (whereResult.stdout ?? "").split(/\r?\n/)) {
         const path = cleanPath(line);
@@ -222,10 +219,9 @@ export class BunRuntimeResolver {
 export interface BunProvisionerOptions {
   runner?: CommandRunner;
   resolver: BunRuntimeResolver;
-  packageId?: string;
 }
 
-export const WINGET_DECLINED_EXIT_CODES = new Set([1223, 1224, 0x800704c7, 0x8a15002b]);
+const WINGET_DECLINED_EXIT_CODES = new Set([1223, 1224, 0x800704c7, 0x8a15002b]);
 
 function wasDeclined(result: CommandResult): boolean {
   return (
@@ -236,11 +232,11 @@ function wasDeclined(result: CommandResult): boolean {
   );
 }
 
-export function buildWingetInstallArgs(version: string, packageId = "Oven-sh.Bun"): readonly string[] {
+export function buildWingetInstallArgs(version: string): readonly string[] {
   return [
     "install",
     "--id",
-    packageId,
+    WIN_GET_BUN_PACKAGE_ID,
     "--version",
     version,
     "--exact",
@@ -254,15 +250,10 @@ export function buildWingetInstallArgs(version: string, packageId = "Oven-sh.Bun
 export class BunProvisioner {
   private readonly runner: CommandRunner;
   private readonly resolver: BunRuntimeResolver;
-  private readonly packageId: string;
 
   constructor(options: BunProvisionerOptions) {
     this.runner = options.runner ?? processCommandRunner;
     this.resolver = options.resolver;
-    this.packageId = options.packageId ?? WIN_GET_BUN_PACKAGE_ID;
-    if (this.packageId !== WIN_GET_BUN_PACKAGE_ID) {
-      throw new Error(`WinGet package ID must be exactly ${WIN_GET_BUN_PACKAGE_ID}`);
-    }
   }
 
   async install(manifest: Pick<ProductManifest, "bun">): Promise<BunProvisioningResult> {
@@ -302,7 +293,7 @@ export class BunProvisioner {
     try {
       installResult = await this.runner.run(
         "winget.exe",
-        buildWingetInstallArgs(manifest.bun.version, this.packageId),
+        buildWingetInstallArgs(manifest.bun.version),
       );
     } catch {
       return {

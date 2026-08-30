@@ -6,11 +6,11 @@ param(
 $ErrorActionPreference = "Stop"
 
 if ($env:OS -ne "Windows_NT") {
-  Write-Output "SKIP: native lifecycle gate requires Windows x64"
+  Write-Output "SKIP: native lifecycle gate requires Windows 11 x64"
   exit 0
 }
 if ($env:PROCESSOR_ARCHITECTURE -ne "AMD64") {
-  throw "The native lifecycle gate requires an x64 Windows runner (received $env:PROCESSOR_ARCHITECTURE)."
+  throw "The native lifecycle gate requires a Windows 11 x64 runner (received $env:PROCESSOR_ARCHITECTURE)."
 }
 
 $zigCommand = Get-Command zig -ErrorAction SilentlyContinue

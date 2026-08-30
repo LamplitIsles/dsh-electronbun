@@ -14,6 +14,13 @@ import {
   type SupervisorLauncher,
 } from "../src/host/startup-controller";
 
+const windows11Platform = {
+  platform: "win32",
+  arch: "x64",
+  release: "10.0.22621",
+  build: 22621,
+} as const;
+
 function manifest(overrides: Partial<ValidatedProductManifest> = {}): ValidatedProductManifest {
   return {
     ...referenceManifest,
@@ -104,7 +111,7 @@ test("starts the sidecar, waits for HTTP success, then navigates", async () => {
     supervisor,
     readiness,
     view,
-    platform: { platform: "win32", arch: "x64" },
+    platform: windows11Platform,
   });
 
   await expect(controller.start()).resolves.toMatchObject({ kind: "ready", url: referenceManifest.navigation.url });
@@ -139,7 +146,7 @@ test("keeps the startup view usable and does not provision before consent", asyn
     supervisor,
     readiness: new FakeReadiness(async () => ({ status: 200, ok: true })),
     view,
-    platform: { platform: "win32", arch: "x64" },
+    platform: windows11Platform,
   });
 
   await expect(controller.start()).resolves.toMatchObject({ kind: "failed", reason: "bun-missing", canInstall: true });
@@ -160,7 +167,7 @@ test("reports early sidecar exit and never navigates", async () => {
     supervisor,
     readiness: new FakeReadiness(() => new Promise(() => undefined)),
     view,
-    platform: { platform: "win32", arch: "x64" },
+    platform: windows11Platform,
   });
   await expect(controller.start()).resolves.toMatchObject({ kind: "failed", reason: "sidecar-exited" });
   expect(view.navigations).toHaveLength(0);
@@ -178,7 +185,7 @@ test("reports a supervisor process-start failure separately from a sidecar exit"
     supervisor,
     readiness: new FakeReadiness(() => new Promise(() => undefined)),
     view,
-    platform: { platform: "win32", arch: "x64" },
+    platform: windows11Platform,
   });
   await expect(controller.start()).resolves.toMatchObject({ kind: "failed", reason: "supervisor-failure" });
   expect(view.navigations).toHaveLength(0);
@@ -199,7 +206,7 @@ test("classifies Win32 supervisor setup failures with operation and code", async
     supervisor,
     readiness: new FakeReadiness(() => new Promise(() => undefined)),
     view,
-    platform: { platform: "win32", arch: "x64" },
+    platform: windows11Platform,
   });
   await expect(controller.start()).resolves.toMatchObject({
     kind: "failed",
@@ -219,7 +226,7 @@ test("treats bounded supervisor stderr as internal supervisor failure evidence",
     supervisor,
     readiness: new FakeReadiness(() => new Promise(() => undefined)),
     view,
-    platform: { platform: "win32", arch: "x64" },
+    platform: windows11Platform,
   });
   await expect(controller.start()).resolves.toMatchObject({
     kind: "failed",
@@ -236,7 +243,7 @@ test("times out non-success responses with an actionable state", async () => {
     supervisor: new FakeSupervisor(),
     readiness: new FakeReadiness(async () => ({ status: 503, ok: false })),
     view,
-    platform: { platform: "win32", arch: "x64" },
+    platform: windows11Platform,
     pollIntervalMs: 100,
   });
   await expect(controller.start()).resolves.toMatchObject({ kind: "failed", reason: "readiness-invalid-response" });
@@ -252,7 +259,7 @@ test("stop is idempotent and cleanup owns the active supervisor", async () => {
     supervisor,
     readiness: new FakeReadiness(() => new Promise(() => undefined)),
     view: new FakeView(),
-    platform: { platform: "win32", arch: "x64" },
+    platform: windows11Platform,
   });
   const start = controller.start();
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -270,9 +277,28 @@ test("rejects unsupported platforms before resolving Bun or launching", async ()
     runtime,
     supervisor,
     view: new FakeView(),
-    platform: { platform: "linux", arch: "x64" },
+    platform: { platform: "linux", arch: "x64", release: "6.8.0", build: undefined },
   });
   await expect(controller.start()).resolves.toMatchObject({ kind: "failed", reason: "unsupported-platform" });
+  expect(runtime.resolveCalls).toBe(0);
+  expect(supervisor.launches).toHaveLength(0);
+});
+
+test("rejects Windows 10 x64 before resolving Bun or launching", async () => {
+  const runtime = new FakeRuntime({ kind: "available", executablePath: "C:\\Bun\\bun.exe", version: "1.4.0" });
+  const supervisor = new FakeSupervisor();
+  const controller = new StartupController({
+    manifest: manifest(),
+    runtime,
+    supervisor,
+    view: new FakeView(),
+    platform: { platform: "win32", arch: "x64", release: "10.0.19045", build: 19045 },
+  });
+  await expect(controller.start()).resolves.toMatchObject({
+    kind: "failed",
+    reason: "unsupported-platform",
+    diagnostic: expect.stringContaining("Windows 10 x64 and earlier are unsupported"),
+  });
   expect(runtime.resolveCalls).toBe(0);
   expect(supervisor.launches).toHaveLength(0);
 });
@@ -285,7 +311,7 @@ test("does not launch after an early stop wins the startup race", async () => {
     runtime,
     supervisor,
     view: new FakeView(),
-    platform: { platform: "win32", arch: "x64" },
+    platform: windows11Platform,
   });
   const start = controller.start();
   await controller.stop();
@@ -310,7 +336,7 @@ test("does not publish ready or navigate when stop wins after readiness", async 
     supervisor,
     readiness,
     view,
-    platform: { platform: "win32", arch: "x64" },
+    platform: windows11Platform,
   });
 
   await controller.start();

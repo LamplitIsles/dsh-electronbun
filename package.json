@@ -2,7 +2,7 @@
   "name": "dsh-electronbun",
   "version": "0.1.0",
   "private": true,
-  "description": "Reusable Windows x64 DSH desktop host built with Electrobun",
+  "description": "Reusable Windows 11 x64 DSH desktop host built with Electrobun",
   "type": "module",
   "scripts": {
     "test": "bun test",

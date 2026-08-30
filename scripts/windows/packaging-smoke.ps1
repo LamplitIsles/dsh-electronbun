@@ -5,11 +5,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 if ($env:OS -ne "Windows_NT") {
-  Write-Output "SKIP: packaging smoke requires Windows x64 and WebView2"
+  Write-Output "SKIP: packaging smoke requires Windows 11 x64 and WebView2"
   exit 0
 }
 if ($env:PROCESSOR_ARCHITECTURE -ne "AMD64") {
-  throw "The packaging smoke requires an x64 Windows runner (received $env:PROCESSOR_ARCHITECTURE)."
+  throw "The packaging smoke requires a Windows 11 x64 runner (received $env:PROCESSOR_ARCHITECTURE)."
 }
 
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path

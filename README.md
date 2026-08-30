@@ -52,8 +52,10 @@ version mismatch all return an actionable diagnostic with retry.
 
 ## Supervisor guarantees
 
-`supervisor/src/main.zig` is a standalone Windows x64 executable. It requires
-Zig **0.16.0** at build time and is not shipped as a compiler. The supervisor:
+`supervisor/src/main.zig` is a standalone Windows 11 x64 executable. It requires
+Zig **0.16.0** at build time and is not shipped as a compiler. The supervisor
+checks the native Windows release/build and fails closed on Windows 10 or
+earlier before opening any process handles. It:
 
 1. opens and waits on the desktop parent PID;
 2. creates a Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`;
@@ -84,7 +86,7 @@ the x64 executable into the ignored `supervisor/bin` directory:
 bun run build:supervisor
 ```
 
-On a Windows x64 maintainer machine, the native lifecycle gate uses a
+On a Windows 11 x64 maintainer machine, the native lifecycle gate uses a
 test-owned temporary root and verifies normal supervisor close, forced parent
 termination, descendant cleanup, bounded port release, and a second launch:
 
@@ -139,7 +141,8 @@ The portable checks do not install or modify the machine's Bun, invoke real
 WinGet, or touch production services. The following remain explicit, unrun
 release gates: stable installer execution on a clean machine, real WinGet
 provisioning, code signing, update delivery, and deployment. The host and
-supervisor reject non-Windows or non-x64 targets with a precise diagnostic;
+supervisor reject non-Windows, non-x64, and Windows 10 x64 targets with a
+precise diagnostic;
 macOS, Linux, Windows ARM64-native artifacts, CEF, WGPU, multiple windows, and
 tray integration are outside this slice.
 
