@@ -1,4 +1,4 @@
-// @hutch cli=production
+// @hutch cli=0.24.3 cottontail=0.5.0
 
 /** Hutch is the build/package owner. Electrobun is pinned by package.json and
  * repeated here so direct Hutch invocations cannot silently float versions. */

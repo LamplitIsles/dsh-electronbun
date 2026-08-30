@@ -23,7 +23,7 @@ const server = Bun.serve({
     }
     if (path === "/") {
       return new Response(
-        `<!doctype html><meta charset="utf-8"><title>DSH Reference Sidecar</title><h1>DSH Reference Sidecar</h1><p data-ready="true">HTTP readiness confirmed.</p>`,
+        `<!doctype html><meta charset="utf-8"><title>DSH Reference Sidecar</title><h1>DSH Reference Sidecar</h1><p data-ready="true">HTTP readiness confirmed.</p><script>window.__electrobunSendToHost?.({action:"navigation-marker",marker:"reference-sidecar-ready"});</script>`,
         { headers: { "content-type": "text/html; charset=utf-8" } },
       );
     }

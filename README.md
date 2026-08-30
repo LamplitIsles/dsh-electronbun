@@ -92,33 +92,46 @@ termination, descendant cleanup, bounded port release, and a second launch:
 bun run test:native
 ```
 
-The release task builds the supervisor first and then asks Hutch for its normal
-Electrobun artifact. Stable output includes Hutch's `win-x64-DSH Reference
-Host-Setup.zip`-style Setup ZIP:
+The release task builds the supervisor first and then asks the project-paired
+Electrobun/Hutch bootstrap for its normal artifact. Stable output includes
+Hutch's `win-x64-DSH Reference Host-Setup.zip`-style Setup ZIP:
 
 ```sh
 bun run build:stable
 ```
 
-The optional packaging smoke gate extracts a Setup ZIP into a disposable root,
-launches it, and waits for the fixture readiness endpoint through native
-WebView2 startup:
+The packaging smoke gate targets the Hutch development runnable app (a Setup
+ZIP is an installer containing a setup executable and payload, not an unpacked
+runnable app). Build the dev app first, then pass its executable if discovery
+under `build` is ambiguous. The gate observes a marker callback from the
+actual WebView2 navigation, sends a real host-window close, proves the
+descendant process and loopback port are gone, and launches the same app again
+to prove reuse:
 
 ```powershell
+bun run build:dev
 powershell -NoProfile -ExecutionPolicy Bypass \
-  -File scripts/windows/packaging-smoke.ps1
+  -File scripts/windows/packaging-smoke.ps1 -AppPath .\build\dev\DSH\DSH.exe
 ```
 
-Hutch is the build/package orchestrator. A fresh checkout may install it with
-the official command and initialize a separate throwaway template if desired:
+Stable Setup ZIP installer execution, clean-machine provisioning, signing, and
+updates are separate release gates and are intentionally not run by this
+smoke.
+
+Hutch is the build/package orchestrator. The repository pins the exact
+Electrobun 2.0.1 bootstrap and its paired Hutch/Cottontail versions. Build and
+SDK preparation commands use that project-local bootstrap, so they do not
+silently select a floating global Hutch. A fresh checkout needs only the
+locked dependency install:
 
 ```sh
-curl -fsSL https://hutch.blackboard.sh/hutch/install.sh | sh
-hutch electrobun init
+bun install --frozen-lockfile
+bun run prepare:sdk
 ```
 
-Initialization is not needed for this repository; `hutch.config.ts` and
-`electrobun.config.ts` are already committed and pin Electrobun 2.0.1.
+`hutch electrobun init` is for creating a new project and is not needed here;
+`hutch.config.ts` and `electrobun.config.ts` are already committed and pin the
+project contract.
 
 ## Release gates and unsupported targets
 

@@ -6,12 +6,13 @@
   "type": "module",
   "scripts": {
     "test": "bun test",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "bun run prepare:sdk && tsc --noEmit",
     "check": "bun run typecheck && bun test",
     "build:supervisor": "bun run scripts/build-supervisor.ts",
     "test:zig": "zig test supervisor/src/command_line.zig && zig test supervisor/src/windows_impl.zig",
     "test:native": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/native-lifecycle-gate.ps1",
     "test:packaging": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/packaging-smoke.ps1",
+    "prepare:sdk": "bun run scripts/prepare-sdk.ts",
     "build": "bun run scripts/build-release.ts stable",
     "build:dev": "bun run scripts/build-release.ts dev",
     "build:stable": "bun run scripts/build-release.ts stable",
@@ -19,12 +20,6 @@
   },
   "engines": {
     "bun": ">=1.3.0"
-  },
-  "exports": {
-    ".": "./src/index.ts",
-    "./manifest": "./src/host/manifest.ts",
-    "./runtime": "./src/host/bun-runtime.ts",
-    "./startup": "./src/host/startup-controller.ts"
   },
   "dependencies": {
     "electrobun": "2.0.1"

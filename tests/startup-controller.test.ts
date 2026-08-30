@@ -26,8 +26,8 @@ function manifest(overrides: Partial<ValidatedProductManifest> = {}): ValidatedP
 class FakeView implements StartupView {
   states: StartupState[] = [];
   navigations: string[] = [];
-  showLoading(message: string): void {
-    this.states.push({ kind: "loading", message });
+  showLoading(loading: Extract<StartupState, { kind: "loading" }>): void {
+    this.states.push(loading);
   }
   showFailure(failure: Extract<StartupState, { kind: "failed" }>): void {
     this.states.push(failure);
@@ -109,6 +109,11 @@ test("starts the sidecar, waits for HTTP success, then navigates", async () => {
 
   await expect(controller.start()).resolves.toMatchObject({ kind: "ready", url: referenceManifest.navigation.url });
   expect(readiness.calls).toBe(1);
+  expect(view.states[0]).toMatchObject({
+    kind: "loading",
+    appName: referenceManifest.app.name,
+    bunVersion: referenceManifest.bun.version,
+  });
   expect(view.navigations).toEqual([referenceManifest.navigation.url]);
   expect(supervisor.launches[0]).toMatchObject({
     parentPid: process.pid,
@@ -179,6 +184,50 @@ test("reports a supervisor process-start failure separately from a sidecar exit"
   expect(view.navigations).toHaveLength(0);
 });
 
+test("classifies Win32 supervisor setup failures with operation and code", async () => {
+  const view = new FakeView();
+  const supervisor = new FakeSupervisor(
+    () => new FakeHandle(Promise.resolve({
+      exitCode: 1,
+      stderr: "error: AssignProcessToJobObject failed (Win32 error 5)",
+      failure: { operation: "AssignProcessToJobObject", win32Code: 5 },
+    })),
+  );
+  const controller = new StartupController({
+    manifest: manifest(),
+    runtime: new FakeRuntime({ kind: "available", executablePath: "C:\\Bun\\bun.exe", version: "1.4.0" }),
+    supervisor,
+    readiness: new FakeReadiness(() => new Promise(() => undefined)),
+    view,
+    platform: { platform: "win32", arch: "x64" },
+  });
+  await expect(controller.start()).resolves.toMatchObject({
+    kind: "failed",
+    reason: "supervisor-failure",
+    diagnostic: expect.stringContaining("AssignProcessToJobObject (Win32 error 5)"),
+  });
+});
+
+test("treats bounded supervisor stderr as internal supervisor failure evidence", async () => {
+  const view = new FakeView();
+  const supervisor = new FakeSupervisor(
+    () => new FakeHandle(Promise.resolve({ exitCode: 1, stderr: "internal supervisor failure" })),
+  );
+  const controller = new StartupController({
+    manifest: manifest(),
+    runtime: new FakeRuntime({ kind: "available", executablePath: "C:\\Bun\\bun.exe", version: "1.4.0" }),
+    supervisor,
+    readiness: new FakeReadiness(() => new Promise(() => undefined)),
+    view,
+    platform: { platform: "win32", arch: "x64" },
+  });
+  await expect(controller.start()).resolves.toMatchObject({
+    kind: "failed",
+    reason: "supervisor-failure",
+    diagnostic: expect.stringContaining("internal failure"),
+  });
+});
+
 test("times out non-success responses with an actionable state", async () => {
   const view = new FakeView();
   const controller = new StartupController({
@@ -242,4 +291,30 @@ test("does not launch after an early stop wins the startup race", async () => {
   await controller.stop();
   await start;
   expect(supervisor.launches).toHaveLength(0);
+});
+
+test("does not publish ready or navigate when stop wins after readiness", async () => {
+  const view = new FakeView();
+  const handle = new FakeHandle();
+  const supervisor = new FakeSupervisor(() => handle);
+  let controller!: StartupController;
+  const readiness = new FakeReadiness(() =>
+    Promise.resolve({ status: 200, ok: true }).then((response) => {
+      void controller.stop();
+      return response;
+    }),
+  );
+  controller = new StartupController({
+    manifest: manifest(),
+    runtime: new FakeRuntime({ kind: "available", executablePath: "C:\\Bun\\bun.exe", version: "1.4.0" }),
+    supervisor,
+    readiness,
+    view,
+    platform: { platform: "win32", arch: "x64" },
+  });
+
+  await controller.start();
+  expect(controller.getState()).toEqual({ kind: "stopping" });
+  expect(view.navigations).toHaveLength(0);
+  expect(handle.stopCalls).toBe(1);
 });

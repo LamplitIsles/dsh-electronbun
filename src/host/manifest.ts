@@ -1,4 +1,4 @@
-import { lstatSync, statSync } from "node:fs";
+import { lstatSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 
 export const WIN_GET_BUN_PACKAGE_ID = "Oven-sh.Bun" as const;
@@ -49,6 +49,7 @@ export interface ManifestValidationOptions {
   fileSystem?: {
     statSync: typeof statSync;
     lstatSync?: typeof lstatSync;
+    realpathSync: typeof realpathSync;
   };
 }
 
@@ -114,6 +115,7 @@ function relativeStagedPath(
   code: ManifestErrorCode,
   name: string,
   stagedRoot: string,
+  fileSystem: NonNullable<ManifestValidationOptions["fileSystem"]>,
 ): { relativePath: string; absolutePath: string } {
   const input = stringValue(value, code, name).replaceAll("\\", "/");
   if (
@@ -128,6 +130,22 @@ function relativeStagedPath(
   const absolutePath = resolve(root, input);
   const outside = relative(root, absolutePath);
   if (outside.startsWith("..") || isAbsolute(outside)) {
+    fail(code, `${name} resolves outside the staged payload root`);
+  }
+
+  // Lexical containment is not enough when a staged directory is a symlink.
+  // Resolve both sides before the file is opened so an intermediate link can
+  // never redirect a manifest path outside the packaged resource root.
+  let realRoot: string;
+  let realPath: string;
+  try {
+    realRoot = fileSystem.realpathSync(root);
+    realPath = fileSystem.realpathSync(absolutePath);
+  } catch {
+    fail(code, `${name} could not be resolved inside the staged payload root`);
+  }
+  const realOutside = relative(realRoot, realPath);
+  if (realOutside.startsWith("..") || isAbsolute(realOutside)) {
     fail(code, `${name} resolves outside the staged payload root`);
   }
 
@@ -263,18 +281,20 @@ export function validateProductManifest(
     fail("bun-package-id", `bun.packageId must be exactly ${WIN_GET_BUN_PACKAGE_ID}`);
   }
 
-  const fileSystem = options.fileSystem ?? { statSync, lstatSync };
+  const fileSystem = options.fileSystem ?? { statSync, lstatSync, realpathSync };
   const sidecarPath = relativeStagedPath(
     sidecar.entrypoint,
     "sidecar-entrypoint",
     "sidecar.entrypoint",
     root,
+    fileSystem,
   );
   const supervisorPath = relativeStagedPath(
     supervisor.executable,
     "supervisor-path",
     "supervisor.executable",
     root,
+    fileSystem,
   );
   stagedFile(sidecarPath.absolutePath, "sidecar.entrypoint", fileSystem);
   stagedFile(supervisorPath.absolutePath, "supervisor.executable", fileSystem);

@@ -2,10 +2,40 @@ import { spawn, type ChildProcess } from "node:child_process";
 
 import type {
   SupervisorExit,
+  SupervisorFailureEvidence,
   SupervisorHandle,
   SupervisorLaunchOptions,
   SupervisorLauncher,
 } from "./startup-controller";
+
+export const MAX_SUPERVISOR_STDERR_BYTES = 16 * 1024;
+const STDERR_TRUNCATION_MARKER = "\n[…truncated]";
+
+const SUPERVISOR_FAILURE = /\b(OpenProcess|CreateJobObjectW|SetInformationJobObject|CreateProcessW|AssignProcessToJobObject|ResumeThread|WaitForMultipleObjects|GetExitCodeProcess) failed \(Win32 error (\d+)\)/;
+
+/** Extracts the supervisor's stable internal failure marker from stderr. */
+export function parseSupervisorFailureEvidence(stderr: string): SupervisorFailureEvidence | undefined {
+  const match = SUPERVISOR_FAILURE.exec(stderr);
+  if (!match) return undefined;
+  return { operation: match[1], win32Code: Number(match[2]) };
+}
+
+/** Keeps captured supervisor evidence bounded before it reaches diagnostics. */
+export function boundSupervisorStderr(stderr: string): string {
+  if (Buffer.byteLength(stderr, "utf8") <= MAX_SUPERVISOR_STDERR_BYTES) return stderr;
+  const markerBytes = Buffer.byteLength(STDERR_TRUNCATION_MARKER, "utf8");
+  const prefix = Buffer.from(stderr, "utf8")
+    .subarray(0, Math.max(0, MAX_SUPERVISOR_STDERR_BYTES - markerBytes))
+    .toString("utf8");
+  return `${prefix}${STDERR_TRUNCATION_MARKER}`;
+}
+
+function appendBoundedStderr(current: string, chunk: string): string {
+  const remaining = MAX_SUPERVISOR_STDERR_BYTES - Buffer.byteLength(current, "utf8");
+  if (remaining <= 0) return current;
+  const bytes = Buffer.from(chunk, "utf8");
+  return current + bytes.subarray(0, remaining).toString("utf8");
+}
 
 export interface SupervisorChild {
   wait(): Promise<SupervisorExit>;
@@ -23,7 +53,7 @@ function childProcessSpawner(executablePath: string, args: readonly string[]): S
     child = spawn(executablePath, [...args], {
       shell: false,
       windowsHide: true,
-      stdio: "ignore",
+      stdio: ["ignore", "ignore", "pipe"],
     });
   } catch (error) {
     throw new Error(`spawn failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -35,10 +65,24 @@ function childProcessSpawner(executablePath: string, args: readonly string[]): S
       if (!waitPromise) {
         waitPromise = new Promise<SupervisorExit>((resolve) => {
           let settled = false;
+          let stderr = "";
+          let stderrTruncated = false;
+          child.stderr?.setEncoding("utf8");
+          child.stderr?.on("data", (chunk: string) => {
+            const before = Buffer.byteLength(stderr, "utf8");
+            const incoming = Buffer.byteLength(chunk, "utf8");
+            const next = appendBoundedStderr(stderr, chunk);
+            if (before + incoming > MAX_SUPERVISOR_STDERR_BYTES) stderrTruncated = true;
+            stderr = next;
+          });
           const finish = (exit: SupervisorExit) => {
             if (settled) return;
             settled = true;
-            resolve(exit);
+            const boundedStderr = boundSupervisorStderr(
+              stderrTruncated ? `${stderr}${STDERR_TRUNCATION_MARKER}` : stderr,
+            );
+            const failure = parseSupervisorFailureEvidence(boundedStderr);
+            resolve({ ...exit, stderr: boundedStderr || undefined, failure });
           };
           child.once("error", (error: NodeJS.ErrnoException) =>
             finish({ exitCode: null, error: `${error.code ?? error.name}: ${error.message}` }),
@@ -95,5 +139,3 @@ export class WindowsSupervisorLauncher implements SupervisorLauncher {
     };
   }
 }
-
-export { childProcessSpawner };

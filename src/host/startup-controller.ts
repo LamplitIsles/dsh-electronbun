@@ -19,7 +19,7 @@ export type StartupFailureReason =
   | "cancelled";
 
 export type StartupState =
-  | { kind: "loading"; message: string }
+  | { kind: "loading"; message: string; appName?: string; bunVersion?: string }
   | { kind: "ready"; url: string }
   | {
       kind: "failed";
@@ -27,11 +27,13 @@ export type StartupState =
       diagnostic: string;
       canInstall: boolean;
       canRetry: boolean;
+      appName?: string;
+      bunVersion?: string;
     }
   | { kind: "stopping" };
 
 export interface StartupView {
-  showLoading(message: string): void;
+  showLoading(loading: Extract<StartupState, { kind: "loading" }>): void;
   showFailure(failure: Extract<StartupState, { kind: "failed" }>): void;
   navigate(url: string): void;
 }
@@ -56,6 +58,13 @@ export interface SupervisorExit {
   exitCode: number | null;
   signal?: string;
   error?: string;
+  stderr?: string;
+  failure?: SupervisorFailureEvidence;
+}
+
+export interface SupervisorFailureEvidence {
+  operation: string;
+  win32Code: number;
 }
 
 export interface SupervisorHandle {
@@ -203,39 +212,7 @@ export class StartupController {
       );
     }
 
-    let handle: SupervisorHandle;
-    try {
-      handle = await this.supervisor.launch({
-        executablePath: this.manifest.resolvedSupervisorExecutable,
-        parentPid: this.parentPid,
-        bunExecutablePath: resolution.executablePath,
-        sidecarEntrypoint: this.manifest.resolvedSidecarEntrypoint,
-        args: this.manifest.sidecar.args,
-      });
-    } catch (error) {
-      return this.fail(
-        operation,
-        "supervisor-failure",
-        `The Windows sidecar supervisor could not start: ${error instanceof Error ? error.message : String(error)}`,
-        false,
-      );
-    }
-    if (!this.isCurrent(operation)) {
-      await handle.stop();
-      return this.state;
-    }
-    this.activeHandle = handle;
-
-    const readiness = await this.waitForReadiness(operation, handle);
-    if (readiness.kind === "ready") {
-      this.transition(readiness);
-      this.view.navigate(this.manifest.navigation.url);
-      return readiness;
-    }
-    if (readiness.kind === "cancelled") return this.state;
-    await this.stopHandle(handle);
-    this.activeHandle = undefined;
-    return this.fail(operation, readiness.reason, readiness.diagnostic, false);
+    return this.launchAndAwaitReadiness(operation, resolution.executablePath);
   }
 
   /** Explicit user action. No provisioning is attempted from start(). */
@@ -258,15 +235,15 @@ export class StartupController {
       };
       if (!this.isCurrent(operation)) return this.state;
       this.transition(failure);
-      return failure;
+      return this.state;
     }
     if (!this.isCurrent(operation)) return this.state;
     if (result.kind === "failed") {
       const failure = failureFromProvisioning(result);
       this.transition(failure);
-      return failure;
+      return this.state;
     }
-    return this.startWithExistingOperation(operation, result.executablePath);
+    return this.launchAndAwaitReadiness(operation, result.executablePath);
   }
 
   async retry(): Promise<StartupState> {
@@ -290,16 +267,16 @@ export class StartupController {
     return this.stopPromise;
   }
 
-  private async startWithExistingOperation(
+  private async launchAndAwaitReadiness(
     operation: { id: number; abort: AbortController },
-    executablePath: string,
+    bunExecutablePath: string,
   ): Promise<StartupState> {
     let handle: SupervisorHandle;
     try {
       handle = await this.supervisor.launch({
         executablePath: this.manifest.resolvedSupervisorExecutable,
         parentPid: this.parentPid,
-        bunExecutablePath: executablePath,
+        bunExecutablePath,
         sidecarEntrypoint: this.manifest.resolvedSidecarEntrypoint,
         args: this.manifest.sidecar.args,
       });
@@ -312,19 +289,31 @@ export class StartupController {
       );
     }
     if (!this.isCurrent(operation)) {
-      await handle.stop();
+      await this.stopHandle(handle);
       return this.state;
     }
     this.activeHandle = handle;
     const readiness = await this.waitForReadiness(operation, handle);
     if (readiness.kind === "ready") {
-      this.transition(readiness);
+      // Readiness may resolve in the same turn that stop() wins the close
+      // race. Never publish ready or navigate a stale operation.
+      if (!this.isCurrent(operation)) {
+        if (this.activeHandle === handle) {
+          this.activeHandle = undefined;
+          await this.stopHandle(handle);
+        }
+        return this.state;
+      }
+      this.transition({ kind: "ready", url: this.manifest.navigation.url });
+      if (!this.isCurrent(operation)) return this.state;
       this.view.navigate(this.manifest.navigation.url);
-      return readiness;
+      return this.state;
     }
     if (readiness.kind === "cancelled") return this.state;
-    await this.stopHandle(handle);
-    this.activeHandle = undefined;
+    if (this.activeHandle === handle) {
+      this.activeHandle = undefined;
+      await this.stopHandle(handle);
+    }
     return this.fail(operation, readiness.reason, readiness.diagnostic, false);
   }
 
@@ -361,11 +350,25 @@ export class StartupController {
 
     while (this.isCurrent(operation)) {
       if (exited) {
+        if (exited.failure) {
+          return {
+            kind: "failed",
+            reason: "supervisor-failure",
+            diagnostic: `The Windows sidecar supervisor failed during ${exited.failure.operation} (Win32 error ${exited.failure.win32Code}) before HTTP readiness.`,
+          };
+        }
         if (exited.error) {
           return {
             kind: "failed",
             reason: "supervisor-failure",
             diagnostic: `The Windows sidecar supervisor failed before HTTP readiness: ${exited.error}`,
+          };
+        }
+        if (exited.stderr?.trim()) {
+          return {
+            kind: "failed",
+            reason: "supervisor-failure",
+            diagnostic: "The Windows sidecar supervisor reported an internal failure before HTTP readiness.",
           };
         }
         return {
@@ -460,10 +463,17 @@ export class StartupController {
   }
 
   private transition(state: StartupState): void {
-    this.state = state;
-    this.onStateChange?.(state);
-    if (state.kind === "loading") this.view.showLoading(state.message);
-    if (state.kind === "failed") this.view.showFailure(state);
+    const enriched = state.kind === "loading" || state.kind === "failed"
+      ? {
+          ...state,
+          appName: this.manifest.app.name,
+          bunVersion: this.manifest.bun.version,
+        }
+      : state;
+    this.state = enriched;
+    this.onStateChange?.(enriched);
+    if (enriched.kind === "loading") this.view.showLoading(enriched);
+    if (enriched.kind === "failed") this.view.showFailure(enriched);
   }
 
   private fail(
@@ -481,7 +491,7 @@ export class StartupController {
       canRetry: true,
     };
     this.transition(failure);
-    return failure;
+    return this.state;
   }
 
   private async stopActiveOperation(): Promise<void> {

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>DSH Reference Host</title>
+    <title>Desktop host</title>
     <style>
       :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
       body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #10141c; color: #edf2f7; }
@@ -18,11 +18,11 @@
   </head>
   <body>
     <main aria-live="polite">
-      <h1 id="title">Starting DSH Reference Host</h1>
-      <p id="status">Checking the supported Bun runtime…</p>
+      <h1 id="title">Starting desktop host</h1>
+      <p id="status">Checking the supported runtime…</p>
       <p id="error" hidden></p>
       <div>
-        <button id="install" hidden>Install Bun 1.4.0</button>
+        <button id="install" hidden>Install Bun</button>
         <button id="retry" class="secondary" hidden>Retry</button>
       </div>
     </main>
@@ -37,15 +37,20 @@
         retry.addEventListener("click", () => send("retry"));
         window.__dshHostState = (kind, value) => {
           if (kind === "loading") {
+            document.title = value.appName ? `Starting ${value.appName}` : "Desktop host";
+            document.getElementById("title").textContent = value.appName ? `Starting ${value.appName}` : "Starting desktop host";
             status.textContent = value.message || "Starting…";
             error.hidden = true;
             install.hidden = true;
             retry.hidden = true;
           } else if (kind === "failed") {
+            document.title = value.appName || "Desktop host";
+            document.getElementById("title").textContent = value.appName || "Desktop host";
             status.textContent = "The desktop host could not start the sidecar.";
             error.textContent = value.diagnostic || "Unknown startup error";
             error.hidden = false;
             install.hidden = !value.canInstall;
+            install.textContent = value.bunVersion ? `Install Bun ${value.bunVersion}` : "Install Bun";
             retry.hidden = !value.canRetry;
           }
         };

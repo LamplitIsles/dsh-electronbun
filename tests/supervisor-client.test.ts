@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildSupervisorArgs, WindowsSupervisorLauncher, type SupervisorSpawner } from "../src/host/supervisor-client";
+import {
+  boundSupervisorStderr,
+  buildSupervisorArgs,
+  MAX_SUPERVISOR_STDERR_BYTES,
+  parseSupervisorFailureEvidence,
+  WindowsSupervisorLauncher,
+  type SupervisorSpawner,
+} from "../src/host/supervisor-client";
 import type { SupervisorChild } from "../src/host/supervisor-client";
 
 test("passes supervisor and sidecar arguments as argv without a shell", async () => {
@@ -45,6 +52,25 @@ test("builds deterministic supervisor arguments", () => {
     sidecarEntrypoint: "/sidecar.ts",
     args: [],
   })).toEqual(["--parent-pid", "7", "--bun", "/bun.exe", "--entrypoint", "/sidecar.ts", "--"]);
+});
+
+test("extracts stable Win32 operation evidence from supervisor stderr", () => {
+  for (const [operation, win32Code] of [
+    ["CreateJobObjectW", 6],
+    ["SetInformationJobObject", 87],
+    ["CreateProcessW", 2],
+    ["AssignProcessToJobObject", 5],
+  ] as const) {
+    expect(parseSupervisorFailureEvidence(`error: ${operation} failed (Win32 error ${win32Code})`))
+      .toEqual({ operation, win32Code });
+  }
+  expect(parseSupervisorFailureEvidence("sidecar exited normally")).toBeUndefined();
+});
+
+test("bounds captured supervisor stderr evidence", () => {
+  const bounded = boundSupervisorStderr("x".repeat(MAX_SUPERVISOR_STDERR_BYTES + 100));
+  expect(Buffer.byteLength(bounded, "utf8")).toBeLessThanOrEqual(MAX_SUPERVISOR_STDERR_BYTES);
+  expect(bounded).toContain("[…truncated]");
 });
 
 describe("supervisor path validation", () => {

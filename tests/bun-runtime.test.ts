@@ -18,7 +18,6 @@ class FakeRunner implements CommandRunner {
 }
 
 const fakeFileSystem = {
-  exists: (_path: string) => true,
   isFile: (_path: string) => true,
 };
 

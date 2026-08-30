@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import { delimiter, join } from "node:path";
 
 import { WIN_GET_BUN_PACKAGE_ID, type ProductManifest } from "./manifest";
@@ -53,12 +53,10 @@ export const processCommandRunner: CommandRunner = {
 };
 
 export interface BunExecutableFileSystem {
-  exists(path: string): boolean;
   isFile(path: string): boolean;
 }
 
 const nativeFileSystem: BunExecutableFileSystem = {
-  exists: existsSync,
   isFile: (path) => {
     try {
       return statSync(path).isFile();
@@ -354,12 +352,4 @@ export class BunProvisioner {
       diagnostic: `WinGet completed, but Bun ${manifest.bun.version} could not be resolved to an absolute executable path. Retry.`,
     };
   }
-}
-
-export function createBunRuntimeProvisioner(options: {
-  manifest: Pick<ProductManifest, "bun">;
-  resolver: BunRuntimeResolver;
-  runner?: CommandRunner;
-}): BunProvisioner {
-  return new BunProvisioner({ resolver: options.resolver, runner: options.runner });
 }

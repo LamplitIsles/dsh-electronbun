@@ -1,7 +1,7 @@
+import { existsSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { existsSync } from "node:fs";
 
-import { BrowserWindow } from "electrobun/main";
+import Electrobun, { BrowserWindow, PATHS } from "electrobun/main";
 
 import referenceManifest from "../../product.manifest";
 import {
@@ -37,7 +37,7 @@ class ElectrobunStartupView implements StartupView {
   }
 
   onMessage(onMessage: (message: unknown) => void): void {
-    this.window.webview.on("host-message", (event: unknown) => {
+    Electrobun.events.on(`host-message-${this.window.webview.id}`, (event: unknown) => {
       const envelope = event as { data?: unknown; detail?: unknown };
       const data = envelope.data ?? envelope.detail ?? event;
       const payload =
@@ -57,8 +57,8 @@ class ElectrobunStartupView implements StartupView {
     });
   }
 
-  showLoading(message: string): void {
-    this.execute("loading", { message });
+  showLoading(loading: Extract<StartupState, { kind: "loading" }>): void {
+    this.execute("loading", loading);
   }
 
   showFailure(failure: Extract<StartupState, { kind: "failed" }>): void {
@@ -83,10 +83,7 @@ class ElectrobunStartupView implements StartupView {
   }
 }
 
-function resourceRoot(): string {
-  // Hutch's packaged process starts with its resource directory as cwd. The
-  // source-tree fallback keeps the validation seam usable during development.
-  if (process.env.DSH_RESOURCE_ROOT) return resolve(process.env.DSH_RESOURCE_ROOT);
+function sourceTreeResourceRoot(): string {
   const candidates = [resolve(process.cwd()), resolve(import.meta.dir, "../.."), resolve(import.meta.dir, "..")];
   return (
     candidates.find(
@@ -95,6 +92,25 @@ function resourceRoot(): string {
         existsSync(resolve(candidate, referenceManifest.supervisor.executable)),
     ) ?? candidates[0]
   );
+}
+
+function resourceRoot(): string {
+  // Electrobun 2.0.1 stages copied payloads below Resources/app. The source
+  // tree is considered only when an explicit developer seam is requested;
+  // packaged startup must never fall back to the current working directory.
+  if (process.env.DSH_SOURCE_TREE_DEV === "1") return sourceTreeResourceRoot();
+  return resolve(PATHS.RESOURCES_FOLDER, "app");
+}
+
+function recordNavigationMarker(marker: string): void {
+  const markerFile = process.env.DSH_NAVIGATION_MARKER_FILE;
+  if (!markerFile) return;
+  try {
+    writeFileSync(markerFile, `${marker}\n`, { encoding: "utf8" });
+  } catch {
+    // The marker is a disposable packaging-smoke seam; never make the host
+    // fail because the optional evidence file cannot be written.
+  }
 }
 
 function invalidManifestState(error: unknown): Extract<StartupState, { kind: "failed" }> {
@@ -145,6 +161,12 @@ async function run(): Promise<void> {
     const action = (message as { action?: unknown }).action;
     if (action === "install-bun") void controller.installBun();
     if (action === "retry") void controller.retry();
+    if (
+      action === "navigation-marker" &&
+      (message as { marker?: unknown }).marker === "reference-sidecar-ready"
+    ) {
+      recordNavigationMarker("reference-sidecar-ready");
+    }
   };
   view.onMessage(onMessage);
   view.window.on("close", () => {

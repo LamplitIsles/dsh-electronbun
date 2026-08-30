@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
@@ -79,6 +79,52 @@ describe("product manifest", () => {
       expect(() => validateProductManifest(referenceManifest, { stagedRoot: root })).toThrow(/staged payload|missing/i);
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects an intermediate symlink that escapes the staged root", () => {
+    const root = stagedRoot();
+    const outside = mkdtempSync(join(tmpdir(), "dsh-electronbun-manifest-outside-"));
+    try {
+      const escapedSidecarRoot = join(outside, "sidecar");
+      mkdirSync(escapedSidecarRoot, { recursive: true });
+      writeFileSync(join(escapedSidecarRoot, "reference-sidecar.ts"), "export {}\n");
+      rmSync(join(root, "payload", "sidecar"), { recursive: true, force: true });
+      symlinkSync(
+        escapedSidecarRoot,
+        join(root, "payload", "sidecar"),
+        process.platform === "win32" ? "junction" : "dir",
+      );
+
+      expect(() => validateProductManifest(referenceManifest, { stagedRoot: root })).toThrow(
+        /outside the staged payload root/,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects a supervisor path through an intermediate symlink", () => {
+    const root = stagedRoot();
+    const outside = mkdtempSync(join(tmpdir(), "dsh-electronbun-supervisor-outside-"));
+    try {
+      const escapedBinRoot = join(outside, "bin");
+      mkdirSync(escapedBinRoot, { recursive: true });
+      writeFileSync(join(escapedBinRoot, "dsh-sidecar-supervisor.exe"), "fixture\n");
+      rmSync(join(root, "bin"), { recursive: true, force: true });
+      symlinkSync(
+        escapedBinRoot,
+        join(root, "bin"),
+        process.platform === "win32" ? "junction" : "dir",
+      );
+
+      expect(() => validateProductManifest(referenceManifest, { stagedRoot: root })).toThrow(
+        /outside the staged payload root/,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
     }
   });
 });
