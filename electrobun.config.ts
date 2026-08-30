@@ -26,7 +26,6 @@ const config = {
     copy: {
       "src/mainview/index.html": "views/main/index.html",
       [referenceManifest.sidecar.entrypoint]: referenceManifest.sidecar.entrypoint,
-      "payload/sidecar/descendant.ts": "payload/sidecar/descendant.ts",
       [supervisorSource]: referenceManifest.supervisor.executable,
     },
     win: {

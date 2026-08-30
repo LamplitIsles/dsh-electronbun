@@ -122,7 +122,6 @@ try {
   New-Item -ItemType Directory -Path $buildRoot -Force | Out-Null
   New-Item -ItemType Directory -Path $fixtureSidecarRoot -Force | Out-Null
   Copy-Item -LiteralPath (Join-Path $repo "payload/sidecar/reference-sidecar.ts") -Destination $sidecar -Force
-  Copy-Item -LiteralPath (Join-Path $repo "payload/sidecar/descendant.ts") -Destination (Join-Path $fixtureSidecarRoot "descendant.ts") -Force
   if (-not $SkipBuild) {
     New-Item -ItemType Directory -Path (Split-Path -Parent $supervisor) -Force | Out-Null
     & $zigCommand.Source build-exe (Join-Path $repo "supervisor/src/main.zig") `
