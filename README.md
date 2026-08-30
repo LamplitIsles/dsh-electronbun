@@ -25,7 +25,16 @@ the validation contract.
 
 The reference payload in `payload/sidecar` is intentionally only a fixture. It
 serves `/health`, serves a tiny UI, and starts one descendant so the native
-cleanup gate can prove complete Job ownership.
+cleanup gate can prove complete Job ownership. The host never imports product
+code: each customized DSH distribution supplies its own manifest and sidecar
+at this seam while reusing the same window, runtime recovery, readiness, and
+Job Object implementation.
+
+[`dsh-rpgmaker-mv`](https://github.com/baihestudio/dsh-rpgmaker-mv) is the
+first live adapter example, not a product dependency or a special case in this
+repository. Future DSH products should follow the same manifest-and-sidecar
+pattern without adding their domain paths, profiles, or launcher behavior to
+the generic host.
 
 ## Startup and recovery
 
@@ -146,6 +155,6 @@ precise diagnostic;
 macOS, Linux, Windows ARM64-native artifacts, CEF, WGPU, multiple windows, and
 tray integration are outside this slice.
 
-`dsh-rpgmaker-mv` is not changed here. Its future adapter is responsible for
-producing a staged entrypoint and manifest for this host; launcher, lease,
-profile, repair, and logging logic remain product-owned.
+Product adapters remain responsible for producing a staged entrypoint and
+manifest for this host; launcher, lease, profile, repair, and logging logic
+remain product-owned.
