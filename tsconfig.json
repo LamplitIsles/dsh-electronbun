@@ -1,0 +1,16 @@
+{
+  "extends": "./.hutch/devkit/tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "types": ["bun"],
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src", "tests", "scripts", "product.manifest.ts", "electrobun.config.ts", "hutch.config.ts"]
+}
