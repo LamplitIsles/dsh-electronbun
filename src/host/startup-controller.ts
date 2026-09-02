@@ -466,7 +466,12 @@ export class StartupController {
         continue;
       }
       if (result.type === "response") {
-        if (result.response.ok) return { kind: "ready", url: this.manifest.navigation.url };
+        const authenticationChallenge = result.response.status === 401 &&
+          this.manifest.authentication !== undefined &&
+          this.launchTokenGateway !== undefined;
+        if (result.response.ok || authenticationChallenge) {
+          return { kind: "ready", url: this.manifest.navigation.url };
+        }
         lastStatus = result.response.status;
         await this.sleep(Math.min(this.pollIntervalMs, Math.max(0, deadline - this.now())), operation.abort.signal).catch(
           () => undefined,

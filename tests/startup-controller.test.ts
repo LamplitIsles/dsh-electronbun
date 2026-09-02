@@ -165,6 +165,32 @@ test("holds the ready sidecar at a launch-token gate before navigation", async (
   expect(view.navigations).toEqual([referenceManifest.navigation.url]);
 });
 
+test("treats HTTP 401 as ready when a launch-token gate owns authentication", async () => {
+  const view = new FakeView();
+  let now = 0;
+  const controller = new StartupController({
+    manifest: manifest({
+      readiness: { ...referenceManifest.readiness, timeoutMs: 1_000 },
+      authentication: { tokenExchangeUrl: "http://127.0.0.1:43173/" },
+    }),
+    runtime: new FakeRuntime({ kind: "available", executablePath: "C:\\Bun\\bun.exe", version: "1.4.0" }),
+    supervisor: new FakeSupervisor(),
+    readiness: new FakeReadiness(async () => ({ status: 401, ok: false })),
+    launchTokenGateway: new FakeLaunchTokenGateway({ kind: "accepted" }),
+    view,
+    platform: windows11Platform,
+    now: () => now,
+    sleep: async (milliseconds) => {
+      if (milliseconds === 1_000) return new Promise<void>(() => undefined);
+      now = 1_000;
+    },
+  });
+
+  await expect(controller.start()).resolves.toMatchObject({ kind: "launch-token" });
+  expect(view.launchTokenStates).toEqual([{ kind: "launch-token" }]);
+  expect(view.navigations).toEqual([]);
+});
+
 test("keeps the gate visible when the launch token is rejected", async () => {
   const view = new FakeView();
   const controller = new StartupController({
