@@ -46,3 +46,17 @@ test('rejects a non-303 response or missing session cookie without writing cooki
   await expect(gateway.exchange('invalid-token')).resolves.toEqual({ kind: 'rejected' });
   expect(writes).toBe(0);
 });
+
+test('falls back to validated token navigation when the native cookie store rejects the issued cookie', async () => {
+  const port = await listen(createServer((_request, response) => {
+    response.writeHead(303, { 'set-cookie': 'dsh-auth-test=issued; Path=/; HttpOnly; SameSite=Strict' });
+    response.end();
+  }));
+  const origin = `http://127.0.0.1:${port}/`;
+  const gateway = new DshLaunchTokenGateway(origin, { set: () => false });
+
+  await expect(gateway.exchange('launch-token')).resolves.toEqual({
+    kind: 'accepted',
+    navigationUrl: `${origin}?token=launch-token`,
+  });
+});

@@ -18,7 +18,7 @@ export interface NativeSessionCookies {
 }
 
 export type LaunchTokenExchangeResult =
-  | { kind: 'accepted' }
+  | { kind: 'accepted'; navigationUrl?: string }
   | { kind: 'rejected' }
   | { kind: 'unavailable' };
 
@@ -128,7 +128,25 @@ export class DshLaunchTokenGateway implements LaunchTokenGateway {
               return;
             }
             const cookie = parseSetCookie(headers[0], this.origin);
-            finish(cookie && this.cookies.set(cookie) ? { kind: 'accepted' } : { kind: 'rejected' });
+            if (!cookie) {
+              finish({ kind: 'rejected' });
+              return;
+            }
+            let stored = false;
+            try {
+              stored = this.cookies.set(cookie);
+            } catch {
+              // Some native WebView cookie bridges reject an otherwise valid
+              // DSH cookie. The validated token can still let the WebView own
+              // the same 303 exchange and store its cookie normally.
+            }
+            if (stored) {
+              finish({ kind: 'accepted' });
+              return;
+            }
+            const navigationUrl = new URL(this.origin);
+            navigationUrl.searchParams.set('token', token);
+            finish({ kind: 'accepted', navigationUrl: navigationUrl.href });
           });
         });
       } catch {

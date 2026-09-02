@@ -272,7 +272,7 @@ export class StartupController {
     if (this.operation !== operation || this.state.kind !== "launch-token" || this.stopRequested) return this.state;
     if (result.kind === "accepted") {
       this.transition({ kind: "ready", url: this.manifest.navigation.url });
-      this.view.navigate(this.manifest.navigation.url);
+      this.view.navigate(result.navigationUrl ?? this.manifest.navigation.url);
       return this.state;
     }
     this.transition({
