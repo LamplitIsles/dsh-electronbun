@@ -1,6 +1,7 @@
 import type { ValidatedProductManifest } from "./manifest";
 import { assertSupportedWindows11X64, readHostPlatform, type HostPlatform } from "./platform";
 import type { BunProvisioningResult, BunResolution } from "./bun-runtime";
+import type { LaunchTokenExchangeResult, LaunchTokenGateway } from "./launch-token";
 
 export type StartupFailureReason =
   | "unsupported-platform"
@@ -20,6 +21,7 @@ export type StartupFailureReason =
 
 export type StartupState =
   | { kind: "loading"; message: string; appName?: string; bunVersion?: string }
+  | { kind: "launch-token"; message?: string }
   | { kind: "ready"; url: string }
   | {
       kind: "failed";
@@ -35,6 +37,7 @@ export type StartupState =
 export interface StartupView {
   showLoading(loading: Extract<StartupState, { kind: "loading" }>): void;
   showFailure(failure: Extract<StartupState, { kind: "failed" }>): void;
+  showLaunchToken(gate: Extract<StartupState, { kind: "launch-token" }>): void;
   navigate(url: string): void;
 }
 
@@ -94,6 +97,7 @@ export interface StartupControllerOptions {
   runtime: BunRuntimeGateway;
   supervisor: SupervisorLauncher;
   readiness?: ReadinessClient;
+  launchTokenGateway?: LaunchTokenGateway;
   view: StartupView;
   platform?: HostPlatform;
   parentPid?: number;
@@ -147,6 +151,7 @@ export class StartupController {
   private readonly runtime: BunRuntimeGateway;
   private readonly supervisor: SupervisorLauncher;
   private readonly readiness: ReadinessClient;
+  private readonly launchTokenGateway?: LaunchTokenGateway;
   private readonly view: StartupView;
   private readonly platform: HostPlatform;
   private readonly parentPid: number;
@@ -166,6 +171,7 @@ export class StartupController {
     this.runtime = options.runtime;
     this.supervisor = options.supervisor;
     this.readiness = options.readiness ?? fetchReadinessClient;
+    this.launchTokenGateway = options.launchTokenGateway;
     this.view = options.view;
     this.platform = options.platform ?? readHostPlatform();
     this.parentPid = options.parentPid ?? process.pid;
@@ -251,6 +257,33 @@ export class StartupController {
     return this.start();
   }
 
+  async submitLaunchToken(token: string): Promise<StartupState> {
+    if (this.state.kind !== "launch-token" || !this.launchTokenGateway) return this.state;
+    if (this.state.message === "Verifying launch token…") return this.state;
+    const operation = this.operation;
+    if (!operation) return this.state;
+    this.transition({ kind: "launch-token", message: "Verifying launch token…" });
+    let result: LaunchTokenExchangeResult;
+    try {
+      result = await this.launchTokenGateway.exchange(token);
+    } catch {
+      result = { kind: "unavailable" };
+    }
+    if (this.operation !== operation || this.state.kind !== "launch-token" || this.stopRequested) return this.state;
+    if (result.kind === "accepted") {
+      this.transition({ kind: "ready", url: this.manifest.navigation.url });
+      this.view.navigate(result.navigationUrl ?? this.manifest.navigation.url);
+      return this.state;
+    }
+    this.transition({
+      kind: "launch-token",
+      message: result.kind === "unavailable"
+        ? "The local DSH service is unavailable. Retry in a moment."
+        : "The launch token was invalid or expired. Try a new token.",
+    });
+    return this.state;
+  }
+
   async stop(): Promise<void> {
     this.stopRequested = true;
     if (this.stopPromise) return this.stopPromise;
@@ -302,6 +335,10 @@ export class StartupController {
           this.activeHandle = undefined;
           await this.stopHandle(handle);
         }
+        return this.state;
+      }
+      if (this.manifest.authentication && this.launchTokenGateway) {
+        this.transition({ kind: "launch-token" });
         return this.state;
       }
       this.transition({ kind: "ready", url: this.manifest.navigation.url });
@@ -429,7 +466,12 @@ export class StartupController {
         continue;
       }
       if (result.type === "response") {
-        if (result.response.ok) return { kind: "ready", url: this.manifest.navigation.url };
+        const authenticationChallenge = result.response.status === 401 &&
+          this.manifest.authentication !== undefined &&
+          this.launchTokenGateway !== undefined;
+        if (result.response.ok || authenticationChallenge) {
+          return { kind: "ready", url: this.manifest.navigation.url };
+        }
         lastStatus = result.response.status;
         await this.sleep(Math.min(this.pollIntervalMs, Math.max(0, deadline - this.now())), operation.abort.signal).catch(
           () => undefined,
@@ -473,6 +515,7 @@ export class StartupController {
     this.state = enriched;
     this.onStateChange?.(enriched);
     if (enriched.kind === "loading") this.view.showLoading(enriched);
+    if (enriched.kind === "launch-token") this.view.showLaunchToken(enriched);
     if (enriched.kind === "failed") this.view.showFailure(enriched);
   }
 

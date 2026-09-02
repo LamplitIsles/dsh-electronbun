@@ -1,7 +1,7 @@
 import { existsSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import Electrobun, { BrowserWindow, PATHS } from "electrobun/main";
+import Electrobun, { BrowserWindow, PATHS, Session } from "electrobun/main";
 
 import referenceManifest from "../../product.manifest";
 import {
@@ -12,6 +12,7 @@ import { WindowsBunRuntimeGateway } from "../host/runtime-gateway";
 import { assertSupportedWindows11X64, readHostPlatform } from "../host/platform";
 import { StartupController, type StartupState, type StartupView } from "../host/startup-controller";
 import { WindowsSupervisorLauncher } from "../host/supervisor-client";
+import { DshLaunchTokenGateway } from "../host/launch-token";
 import {
   SAFE_STARTUP_WINDOW_SETTINGS,
   selectStartupWindowSettings,
@@ -67,6 +68,10 @@ class ElectrobunStartupView implements StartupView {
 
   showFailure(failure: Extract<StartupState, { kind: "failed" }>): void {
     this.execute("failed", failure);
+  }
+
+  showLaunchToken(gate: Extract<StartupState, { kind: "launch-token" }>): void {
+    this.execute("launch-token", gate);
   }
 
   navigate(url: string): void {
@@ -158,6 +163,12 @@ async function run(): Promise<void> {
     runtime,
     supervisor: new WindowsSupervisorLauncher(),
     view,
+    ...(manifest.authentication ? {
+      launchTokenGateway: new DshLaunchTokenGateway(
+        manifest.authentication.tokenExchangeUrl,
+        Session.defaultSession.cookies,
+      ),
+    } : {}),
   });
 
   // The view is deliberately the only command surface. A user click is the
@@ -167,6 +178,9 @@ async function run(): Promise<void> {
     const action = (message as { action?: unknown }).action;
     if (action === "install-bun") void controller.installBun();
     if (action === "retry") void controller.retry();
+    if (action === "submit-launch-token" && typeof (message as { token?: unknown }).token === "string") {
+      void controller.submitLaunchToken((message as { token: string }).token);
+    }
     if (
       action === "navigation-marker" &&
       (message as { marker?: unknown }).marker === "reference-sidecar-ready"
