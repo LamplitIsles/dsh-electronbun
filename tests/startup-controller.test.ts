@@ -13,6 +13,7 @@ import {
   type SupervisorLaunchOptions,
   type SupervisorLauncher,
 } from "../src/host/startup-controller";
+import type { LaunchTokenExchangeResult, LaunchTokenGateway } from "../src/host/launch-token";
 
 const windows11Platform = {
   platform: "win32",
@@ -33,14 +34,27 @@ function manifest(overrides: Partial<ValidatedProductManifest> = {}): ValidatedP
 class FakeView implements StartupView {
   states: StartupState[] = [];
   navigations: string[] = [];
+  launchTokenStates: Extract<StartupState, { kind: "launch-token" }>[] = [];
   showLoading(loading: Extract<StartupState, { kind: "loading" }>): void {
     this.states.push(loading);
   }
   showFailure(failure: Extract<StartupState, { kind: "failed" }>): void {
     this.states.push(failure);
   }
+  showLaunchToken(gate: Extract<StartupState, { kind: "launch-token" }>): void {
+    this.launchTokenStates.push(gate);
+  }
   navigate(url: string): void {
     this.navigations.push(url);
+  }
+}
+
+class FakeLaunchTokenGateway implements LaunchTokenGateway {
+  tokens: string[] = [];
+  constructor(private readonly result: LaunchTokenExchangeResult) {}
+  async exchange(token: string): Promise<LaunchTokenExchangeResult> {
+    this.tokens.push(token);
+    return this.result;
   }
 }
 
@@ -127,6 +141,46 @@ test("starts the sidecar, waits for HTTP success, then navigates", async () => {
     bunExecutablePath: "C:\\Bun\\bun.exe",
     sidecarEntrypoint: "C:\\app\\payload\\sidecar.ts",
   });
+});
+
+test("holds the ready sidecar at a launch-token gate before navigation", async () => {
+  const view = new FakeView();
+  const gateway = new FakeLaunchTokenGateway({ kind: "accepted" });
+  const controller = new StartupController({
+    manifest: manifest({ authentication: { tokenExchangeUrl: "http://127.0.0.1:43173/" } }),
+    runtime: new FakeRuntime({ kind: "available", executablePath: "C:\\Bun\\bun.exe", version: "1.4.0" }),
+    supervisor: new FakeSupervisor(),
+    readiness: new FakeReadiness(async () => ({ status: 200, ok: true })),
+    launchTokenGateway: gateway,
+    view,
+    platform: windows11Platform,
+  });
+
+  await expect(controller.start()).resolves.toMatchObject({ kind: "launch-token" });
+  expect(view.navigations).toEqual([]);
+  expect(view.launchTokenStates).toEqual([{ kind: "launch-token" }]);
+
+  await expect(controller.submitLaunchToken("test-launch-token")).resolves.toMatchObject({ kind: "ready" });
+  expect(gateway.tokens).toEqual(["test-launch-token"]);
+  expect(view.navigations).toEqual([referenceManifest.navigation.url]);
+});
+
+test("keeps the gate visible when the launch token is rejected", async () => {
+  const view = new FakeView();
+  const controller = new StartupController({
+    manifest: manifest({ authentication: { tokenExchangeUrl: "http://127.0.0.1:43173/" } }),
+    runtime: new FakeRuntime({ kind: "available", executablePath: "C:\\Bun\\bun.exe", version: "1.4.0" }),
+    supervisor: new FakeSupervisor(),
+    readiness: new FakeReadiness(async () => ({ status: 200, ok: true })),
+    launchTokenGateway: new FakeLaunchTokenGateway({ kind: "rejected" }),
+    view,
+    platform: windows11Platform,
+  });
+
+  await controller.start();
+  await expect(controller.submitLaunchToken("expired-token")).resolves.toMatchObject({ kind: "launch-token" });
+  expect(view.navigations).toEqual([]);
+  expect(view.launchTokenStates.at(-1)).toMatchObject({ message: expect.stringContaining("invalid or expired") });
 });
 
 test("keeps the startup view usable and does not provision before consent", async () => {

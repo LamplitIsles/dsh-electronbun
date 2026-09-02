@@ -47,6 +47,18 @@ describe("product manifest", () => {
     }
   });
 
+  test("accepts a same-origin root token exchange endpoint", () => {
+    const root = stagedRoot();
+    try {
+      const candidate = structuredClone(referenceManifest) as Record<string, unknown>;
+      candidate.authentication = { tokenExchangeUrl: "http://127.0.0.1:43173/" };
+      const manifest = validateProductManifest(candidate, { stagedRoot: root });
+      expect(manifest.authentication).toEqual({ tokenExchangeUrl: "http://127.0.0.1:43173/" });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test.each([
     ["non-loopback readiness", { readiness: { url: "http://localhost:43173/health" } }],
     ["alternate IPv4 spelling", { readiness: { url: "http://127.0.0.01:43173/health" } }],
@@ -58,6 +70,8 @@ describe("product manifest", () => {
     ["invalid Bun version", { bun: { version: "^1.4.0" } }],
     ["invalid timeout", { readiness: { timeoutMs: 0 } }],
     ["invalid window", { window: { width: 0, height: 0 } }],
+    ["token exchange endpoint with a query", { authentication: { tokenExchangeUrl: "http://127.0.0.1:43173/?unsafe" } }],
+    ["cross-origin token exchange endpoint", { authentication: { tokenExchangeUrl: "http://127.0.0.1:43174/" } }],
   ])("rejects %s before process launch", (_name, override) => {
     const root = stagedRoot();
     try {

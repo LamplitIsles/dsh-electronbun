@@ -27,6 +27,14 @@ export interface ProductManifest {
     /** HTTP URL loaded by the native WebView2 view after readiness. */
     url: string;
   };
+  /**
+   * Optional DSH BrowserAuth bootstrap. The host asks for a one-time launch
+   * token only after the sidecar is ready, exchanges it at this URL, and
+   * places the resulting session cookie into the native WebView session.
+   */
+  authentication?: {
+    tokenExchangeUrl: string;
+  };
   window: {
     title: string;
     width: number;
@@ -64,6 +72,7 @@ export type ManifestErrorCode =
   | "sidecar-arguments"
   | "readiness-url"
   | "navigation-url"
+  | "authentication-url"
   | "startup-timeout"
   | "window-settings"
   | "supervisor-path"
@@ -309,6 +318,17 @@ export function validateProductManifest(
 
   const readinessUrl = loopbackUrl(readiness.url, "readiness-url", "readiness.url");
   const navigationUrl = loopbackUrl(navigation.url, "navigation-url", "navigation.url");
+  let authentication: ProductManifest["authentication"];
+  if (source.authentication !== undefined) {
+    const auth = record(source.authentication, "authentication");
+    const tokenExchangeUrl = loopbackUrl(auth.tokenExchangeUrl, "authentication-url", "authentication.tokenExchangeUrl");
+    const exchange = new URL(tokenExchangeUrl);
+    const navigationOrigin = new URL(navigationUrl).origin;
+    if (exchange.origin !== navigationOrigin || exchange.pathname !== "/" || exchange.search || exchange.hash) {
+      fail("authentication-url", "authentication.tokenExchangeUrl must be the same-origin root URL without a query or fragment");
+    }
+    authentication = { tokenExchangeUrl };
+  }
   const timeoutMs = readiness.timeoutMs;
   const timeoutNumber = typeof timeoutMs === "number" ? timeoutMs : Number.NaN;
   if (
@@ -344,6 +364,7 @@ export function validateProductManifest(
     sidecar: { entrypoint: sidecarPath.relativePath, args },
     readiness: { url: readinessUrl, timeoutMs: timeoutNumber },
     navigation: { url: navigationUrl },
+    ...(authentication ? { authentication } : {}),
     window: { title, width: widthNumber, height: heightNumber },
     supervisor: { executable: supervisorPath.relativePath },
     resolvedSidecarEntrypoint: sidecarPath.absolutePath,
